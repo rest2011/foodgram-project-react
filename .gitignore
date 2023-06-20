@@ -130,3 +130,18 @@ dmypy.json
 
 # .idea
 .idea
+
+# папки со статикой и медиа
+media/
+
+# Others
+node_modules
+
+# Docker-compose
+/docker-compose.yml
+
+#static
+frontend/node_modules
+backend/static_backend
+
+.vscode
