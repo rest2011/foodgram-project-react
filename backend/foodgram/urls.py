@@ -9,4 +9,4 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
-    urlpatterns += [re_path(r'^media/(?P<path>.*)$', views.serve),]
+    urlpatterns += [re_path(r'^media/(?P<path>.*)$', views.serve), ]
