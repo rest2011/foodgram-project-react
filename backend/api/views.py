@@ -116,7 +116,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        user = self.request.user
+        user = self.request.user.is_authenticated
         queryset = queryset.annotate(
             is_favorited=Exists(
                 Favorite.objects.filter(user=user, recipe=OuterRef('pk'))
