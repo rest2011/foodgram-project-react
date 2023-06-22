@@ -1,4 +1,4 @@
- ## Сайт Foodgram - Продуктовый помощник https://restfood.sytes.net/
+ ## Сайт Foodgram - Продуктовый помощник
 
  ![workflow](https://github.com/rest2011/foodgram-project-react/actions/workflows/main.yml/badge.svg?event=push)
 
@@ -48,3 +48,10 @@ http://localhost/
 
 ### Автор
 Ринат Хаматьяров (https://github.com/rest2011)
+
+Сайт доступен по адресу:
+https://restfood.sytes.net/
+
+Данные для доступа в админку:
+логин - admin
+пароль - user1111
