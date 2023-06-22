@@ -1,5 +1,6 @@
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
+
 from users.models import User
 
 VALID_TAG_SLUG = 'Введите корректное значение поля "slug"'

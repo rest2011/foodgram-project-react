@@ -1,25 +1,26 @@
 from http import HTTPStatus
+from io import StringIO
 
-from django.db.models import Sum
+from django.db.models import Sum, Exists, OuterRef
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from djoser.views import UserViewSet
-from recipes.models import (AmountIngredient, Favorite, Ingredient, Recipe,
-                            ShoppingCart, Tag)
-from rest_framework import filters, status, viewsets
+from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
-from users.models import Follow, User
+
 
 from .filters import IngredientFilter, RecipeFilter
-from .pagination import LimitPageNumberPagination
-from .permissions import AdminAndUserOrReadOnly, AdminOrAuthorOrReadOnly
+from .permissions import IsAuthor, IsUser
 from .serializers import (FollowSerializer, IngredientSerializer,
-                          ListUserSerializer, RecipeCreateSerializer,
+                          UserSerialiser, RecipeCreateSerializer,
                           RecipeForFollowersSerializer, RecipeSerializer,
                           TagSerializer)
+from recipes.models import (AmountIngredient, Favorite, Ingredient,
+                            Recipe, ShoppingCart, Tag)
+from users.models import Follow, User
 
 NOT_SELF_SUBSCRIBE = 'На себя подписаться нельзя'
 DOUBLE_SUBSCRIBE = "Вы уже подписаны на этого автора"
@@ -31,14 +32,14 @@ class UsersViewSet(UserViewSet):
     Вьюсет для пользователей.
     """
     queryset = User.objects.all()
-    serializer_class = ListUserSerializer
+    serializer_class = UserSerialiser
     filter_backends = (DjangoFilterBackend, filters.SearchFilter,)
     permission_classes = (AllowAny,)
     search_fields = ('username', 'email')
 
     def get_permissions(self):
         if self.action == 'me' or self.action == 'retrieve':
-            self.permission_classes = [IsAuthenticated]
+            self.permission_classes = [IsUser]
         return super().get_permissions()
 
     @action(
@@ -55,55 +56,56 @@ class UsersViewSet(UserViewSet):
         )
         return self.get_paginated_response(serializer.data)
 
-    @action(
-        methods=['POST', 'DELETE'], detail=True,
-        permission_classes=(IsAuthenticated,)
-    )
-    def subscribe(self, request, id):
-        author = get_object_or_404(User, id=id)
-        if request.method == 'POST':
-            if request.user.id == author.id:
-                return Response(
-                    {"errors": NOT_SELF_SUBSCRIBE},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            if Follow.objects.filter(
-                user=request.user, author=author
-            ).exists():
-                return Response(
-                    {"errors": DOUBLE_SUBSCRIBE},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            serializer = FollowSerializer(
-                Follow.objects.create(user=request.user, author=author),
-                context={'request': request},
-            )
+
+class FollowUnfollow(generics.RetrieveDestroyAPIView,
+                     generics.ListCreateAPIView):
+    """
+    Вьюсет для управления подпиской и отпиской.
+    """
+    permission_classes = (IsAuthenticated,)
+    serializer_class = FollowSerializer
+
+    def get_queryset(self):
+        return self.request.user.follower.all()
+
+    def get_object(self):
+        user_id = self.kwargs['user_id']
+        user = get_object_or_404(User, id=user_id)
+        return user
+
+    def create(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if request.user.id == instance.id:
+            return Response({'errors': NOT_SELF_SUBSCRIBE},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if request.user.follower.filter(author=instance).exists():
             return Response(
-                serializer.data, status=status.HTTP_201_CREATED
-            )
-        elif request.method == 'DELETE':
-            if Follow.objects.filter(
-                    user=request.user, author=author
-            ).exists():
-                Follow.objects.filter(
-                    user=request.user, author=author
-                ).delete()
-                return Response(status=status.HTTP_204_NO_CONTENT)
-            return Response(
+                {'errors': DOUBLE_SUBSCRIBE},
+                status=status.HTTP_400_BAD_REQUEST)
+        subs = request.user.follower.create(author=instance)
+        serializer = self.get_serializer(subs)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def perform_destroy(self, instance):
+        if self.request.user.follower.filter(author=instance).exists():
+            self.request.user.follower.filter(author=instance).delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
                 {"errors": NOT_SUBSCRIBED}, status=status.HTTP_400_BAD_REQUEST,
             )
 
 
 class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all()
-    pagination_class = LimitPageNumberPagination
     filter_backends = (DjangoFilterBackend,)
     filterset_class = RecipeFilter
-    permission_classes = (AdminOrAuthorOrReadOnly,)
+    permission_classes = (AllowAny,)
 
     def get_permissions(self):
-        if (self.action in ('create', 'update', 'delete')):
-            self.permission_classes = (IsAuthenticated,)
+        if (self.action in ('create')):
+            self.permission_classes = (AllowAny,)
+        if (self.action in ('update', 'delete')):
+            self.permission_classes = (IsAdminUser | IsAuthor)
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -111,6 +113,19 @@ class RecipeViewSet(viewsets.ModelViewSet):
             return RecipeSerializer
         if self.action in ('create', 'partial_update'):
             return RecipeCreateSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        queryset = queryset.annotate(
+            is_favorited=Exists(
+                Favorite.objects.filter(user=user, recipe=OuterRef('pk'))
+            ),
+            is_in_shopping_cart=Exists(
+                ShoppingCart.objects.filter(user=user, recipe=OuterRef('pk'))
+            )
+        )
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
@@ -168,22 +183,28 @@ class RecipeViewSet(viewsets.ModelViewSet):
         ).values(
             'ingredients__name', 'ingredients__measurement_unit'
         ).annotate(value=Sum('amount')).order_by('ingredients__name')
+
+        def shopping_cart_text(ingredients):
+            file_buffer = StringIO()
+            file_buffer.write('Продукты к покупке:\n')
+            for ingredient in ingredients:
+                file_buffer.write(
+                    f'- {ingredient["ingredients__name"]} '
+                    f'- {ingredient["value"]} '
+                    f'{ingredient["ingredients__measurement_unit"]}\n'
+                )
+            return file_buffer.getvalue()
+
         response = HttpResponse(content_type='text/plain', charset='utf-8')
         response['Content-Disposition'] = f'attachment; filename={file}'
-        response.write('Продукты к покупке:\n')
-        for ingredient in ingredients:
-            response.write(
-                f'- {ingredient["ingredients__name"]} '
-                f'- {ingredient["value"]} '
-                f'{ingredient["ingredients__measurement_unit"]}\n'
-            )
+        response.write(shopping_cart_text(ingredients))
         return response
 
 
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
-    permission_classes = (AdminAndUserOrReadOnly,)
+    permission_classes = (AllowAny,)
     pagination_class = None
 
 
@@ -193,4 +214,4 @@ class IngredientViewSet(viewsets.ModelViewSet):
     filter_backends = (DjangoFilterBackend, filters.SearchFilter,)
     filterset_class = IngredientFilter
     pagination_class = None
-    permission_classes = (AdminAndUserOrReadOnly,)
+    permission_classes = (AllowAny,)
