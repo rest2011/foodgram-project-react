@@ -42,7 +42,7 @@ class CreateUserSerializer(UserCreateSerializer):
     class Meta:
         model = User
         fields = (
-             'email', 'id', 'username', 'first_name', 'last_name', 'password',
+            'email', 'id', 'username', 'first_name', 'last_name', 'password',
         )
         extra_kwargs = {
             'password': {'required': True, 'write_only': True}
@@ -138,7 +138,7 @@ class RecipeSerializer(serializers.ModelSerializer):
     def get_is_favorited(self, obj):
         user = self.context.get('request').user
         return Favorite.objects.filter(user=user, recipe=obj).exists() if all(
-           [user.is_authenticated, self.context.get('request') is not None]
+            [user.is_authenticated, self.context.get('request') is not None]
         ) else False
 
 

@@ -15,9 +15,9 @@ router_v1.register('tags', TagViewSet, basename='tags')
 
 urlpatterns = [
     path(
-          'users/<int:user_id>/subscribe/',
-          FollowUnfollow.as_view(),
-          name='follow'),
+        'users/<int:user_id>/subscribe/',
+        FollowUnfollow.as_view(), name='follow'
+    ),
     path('', include(router_v1.urls)),
     path('', include('djoser.urls')),
     path('auth/', include('djoser.urls.authtoken')),
