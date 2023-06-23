@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from djoser.serializers import (UserSerializer as DjoserUserSerializer,
                                 UserCreateSerializer)
 from drf_extra_fields.fields import Base64ImageField
@@ -6,8 +7,7 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
 from recipes.models import (MINIMUM_COOKING_TIME, MINIMUM_OF_INGREDIENTS,
-                            AmountIngredient, Ingredient, Recipe, Tag,
-                            ShoppingCart, Favorite)
+                            AmountIngredient, Ingredient, Recipe, Tag)
 from users.models import Follow, User
 
 NEED_TAGS_FOR_INGREDIENT = 'Для рецепта нужен минимум 1 тэг'
@@ -23,8 +23,8 @@ class UserSerialiser(DjoserUserSerializer):
     class Meta:
         model = User
         fields = (
-            "email", "id", "username", "first_name",
-            "last_name", "is_subscribed",
+            'email', 'id', 'username', 'first_name',
+            'last_name', 'is_subscribed',
         )
 
     def get_is_subscribed(self, obj):
@@ -115,8 +115,8 @@ class RecipeSerializer(serializers.ModelSerializer):
         read_only=True,
         source='amount_ingredient',
     )
-    is_favorited = serializers.SerializerMethodField(read_only=True)
-    is_in_shopping_cart = serializers.SerializerMethodField(read_only=True)
+    is_favorited = serializers.BooleanField(read_only=True)
+    is_in_shopping_cart = serializers.BooleanField(read_only=True)
     image = Base64ImageField(use_url=True, )
 
     class Meta:
@@ -126,20 +126,6 @@ class RecipeSerializer(serializers.ModelSerializer):
             'is_favorited', 'is_in_shopping_cart',
             'name', 'image', 'text', 'cooking_time',
         )
-
-    def get_is_in_shopping_cart(self, obj):
-        user = self.context.get('request').user
-        return ShoppingCart.objects.filter(
-            user=user, recipe=obj
-        ).exists() if all(
-            [user.is_authenticated, self.context.get('request') is not None]
-        ) else False
-
-    def get_is_favorited(self, obj):
-        user = self.context.get('request').user
-        return Favorite.objects.filter(user=user, recipe=obj).exists() if all(
-            [user.is_authenticated, self.context.get('request') is not None]
-        ) else False
 
 
 class RecipeCreateSerializer(serializers.ModelSerializer):
@@ -172,23 +158,21 @@ class RecipeCreateSerializer(serializers.ModelSerializer):
     def validate_tags(self, value):
         if not value:
             raise serializers.ValidationError(
-                "Список тегов не может быть пустым"
+                'Список тегов не может быть пустым'
             )
         return value
 
     def validate_ingredients(self, value):
         if not value:
             raise serializers.ValidationError(
-                "Список ингредиентов не может быть пустым"
+                'Список ингредиентов не может быть пустым'
             )
         return value
 
     def create_ingredients(self, ingredients, recipe):
         ingredient_objs = []
         for ingredient in ingredients:
-            ingredient_obj, created = Ingredient.objects.get_or_create(
-                id=ingredient['id']
-            )
+            ingredient_obj = get_object_or_404(Ingredient, id=ingredient['id'])
             amount_ingredient = AmountIngredient(
                 ingredients=ingredient_obj,
                 recipe=recipe,
