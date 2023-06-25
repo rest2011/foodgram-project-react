@@ -2,7 +2,8 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (FollowUnfollow, IngredientViewSet,
-                    RecipeViewSet, TagViewSet, UsersViewSet)
+                    RecipeViewSet, TagViewSet, UsersViewSet,
+                    SubscriptionsList)
 
 app_name = 'api'
 
@@ -18,6 +19,8 @@ urlpatterns = [
         'users/<int:user_id>/subscribe/',
         FollowUnfollow.as_view(), name='follow'
     ),
+    path('users/subscriptions/',
+         SubscriptionsList.as_view(), name='subscriptions'),
     path('', include(router_v1.urls)),
     path('', include('djoser.urls')),
     path('auth/', include('djoser.urls.authtoken')),

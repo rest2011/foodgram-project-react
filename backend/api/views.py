@@ -41,20 +41,6 @@ class UsersViewSet(UserViewSet):
             self.permission_classes = [IsUser]
         return super().get_permissions()
 
-    @action(
-        methods=['GET'],
-        detail=False,
-        permission_classes=(IsAuthenticated,)
-    )
-    def subscriptions(self, request):
-        user = request.user
-        queryset = Follow.objects.filter(user=user)
-        page = self.paginate_queryset(queryset)
-        serializer = FollowSerializer(
-            page, many=True, context={'request': request}
-        )
-        return self.get_paginated_response(serializer.data)
-
 
 class FollowUnfollow(generics.RetrieveDestroyAPIView,
                      generics.ListCreateAPIView):
@@ -77,12 +63,13 @@ class FollowUnfollow(generics.RetrieveDestroyAPIView,
         if request.user.id == instance.id:
             return Response({'errors': NOT_SELF_SUBSCRIBE},
                             status=status.HTTP_400_BAD_REQUEST)
-        if request.user.follower.filter(author=instance).exists():
-            return Response(
-                {'errors': DOUBLE_SUBSCRIBE},
-                status=status.HTTP_400_BAD_REQUEST)
-        subs = request.user.follower.create(author=instance)
-        serializer = self.get_serializer(subs)
+        subscription, created = request.user.follower.get_or_create(
+            author=instance
+        )
+        if not created:
+            return Response({'errors': DOUBLE_SUBSCRIBE},
+                            status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(subscription)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def perform_destroy(self, instance):
@@ -94,6 +81,24 @@ class FollowUnfollow(generics.RetrieveDestroyAPIView,
         )
 
 
+class SubscriptionsList(generics.ListAPIView):
+    """
+    Вьюсет для получения списка подписок пользователя.
+    """
+    permission_classes = (IsAuthenticated,)
+    serializer_class = FollowSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        return Follow.objects.filter(user=user)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
+
+
 class RecipeViewSet(viewsets.ModelViewSet):
     filter_backends = (DjangoFilterBackend,)
     filterset_class = RecipeFilter
@@ -101,7 +106,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create']:
-            self.permission_classes = (AllowAny,)
+            self.permission_classes = (IsUser,)
         if self.action in ['update', 'delete']:
             self.permission_classes = (IsAdminUser | IsAuthor)
         return super().get_permissions()
@@ -126,7 +131,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
                         user_id=user_id, recipe=OuterRef('pk')
                     )
                 )
-            )
+            ).prefetch_related('ingredients').select_related('author')
         return Recipe.objects.all()
 
     def perform_create(self, serializer):
