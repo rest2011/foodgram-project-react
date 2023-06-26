@@ -52,6 +52,6 @@ http://localhost/
 Сайт доступен по адресу:
 https://restfood.sytes.net/
 
-Данные для доступа в админку:
-логин - renatig@yandex.ru (admin для админки)
+Данные для доступа на сайт и в админку:
+логин - hamatrin@gmail.com (admin для админки)
 пароль - user1111
