@@ -50,8 +50,8 @@ http://localhost/
 Ринат Хаматьяров (https://github.com/rest2011)
 
 Сайт доступен по адресу:
-https://restfood.sytes.net/ (158.160.0.4)
+https://restfood.sytes.net/
 
 Данные для доступа в админку:
-логин - admin
+логин - renatig@yandex.ru (admin для админки)
 пароль - user1111
