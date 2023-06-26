@@ -148,9 +148,6 @@ class RecipeCreateSerializer(serializers.ModelSerializer):
         )
 
     def validate_cooking_time(self, value):
-        """
-        Валидация времени приготовления блюда.
-        """
         if value <= 0:
             raise serializers.ValidationError(MINIMUM_COOKING_TIME)
         return value

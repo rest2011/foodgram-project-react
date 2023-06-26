@@ -7,12 +7,12 @@ from djoser.views import UserViewSet
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
-from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 
 
 from .filters import IngredientFilter, RecipeFilter
-from .permissions import IsAuthor, IsUser
+from .permissions import IsAuthor
 from .serializers import (FollowSerializer, IngredientSerializer,
                           UserSerialiser, RecipeCreateSerializer,
                           RecipeForFollowersSerializer, RecipeSerializer,
@@ -33,12 +33,13 @@ class UsersViewSet(UserViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerialiser
     filter_backends = (DjangoFilterBackend, filters.SearchFilter,)
-    permission_classes = (AllowAny,)
     search_fields = ('username', 'email')
 
     def get_permissions(self):
-        if self.action == 'me' or self.action == 'retrieve':
-            self.permission_classes = [IsUser]
+        if self.action == 'retrieve':
+            self.permission_classes = [IsAuthenticated]
+        if self.action == 'me':
+            self.permission_classes = [IsAuthor]
         return super().get_permissions()
 
 
@@ -72,13 +73,18 @@ class FollowUnfollow(generics.RetrieveDestroyAPIView,
         serializer = self.get_serializer(subscription)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    def perform_destroy(self, instance):
-        if self.request.user.follower.filter(author=instance).exists():
-            self.request.user.follower.filter(author=instance).delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        return Response(
-            {'errors': NOT_SUBSCRIBED}, status=status.HTTP_400_BAD_REQUEST,
+    def delete(self, request, *args, **kwargs):
+        instance = self.get_object()
+        subscription = Follow.objects.filter(
+            user=request.user, author=instance
         )
+        if subscription:
+            subscription.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(
+                {'errors': NOT_SUBSCRIBED}, status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class SubscriptionsList(generics.ListAPIView):
@@ -100,15 +106,17 @@ class SubscriptionsList(generics.ListAPIView):
 
 
 class RecipeViewSet(viewsets.ModelViewSet):
+    """
+    Вьюсет для действий с рецептами.
+    """
     filter_backends = (DjangoFilterBackend,)
     filterset_class = RecipeFilter
-    permission_classes = (AllowAny,)
 
     def get_permissions(self):
         if self.action in ['create']:
-            self.permission_classes = (IsUser,)
-        if self.action in ['update', 'delete']:
-            self.permission_classes = (IsAdminUser | IsAuthor)
+            self.permission_classes = [IsAuthenticated]
+        if self.action in ['partial_update', 'destroy']:
+            self.permission_classes = [IsAuthor | IsAdminUser]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -132,7 +140,9 @@ class RecipeViewSet(viewsets.ModelViewSet):
                     )
                 )
             ).prefetch_related('ingredients').select_related('author')
-        return Recipe.objects.all()
+        return Recipe.objects.all().prefetch_related(
+            'ingredients'
+        ).select_related('author')
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
@@ -207,16 +217,20 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
 
 class TagViewSet(viewsets.ModelViewSet):
+    """
+    Вьюсет для тэгов.
+    """
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
-    permission_classes = (AllowAny,)
     pagination_class = None
 
 
 class IngredientViewSet(viewsets.ModelViewSet):
+    """
+    Вьюсет для ингредиентов.
+    """
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
     filter_backends = (DjangoFilterBackend, filters.SearchFilter,)
     filterset_class = IngredientFilter
     pagination_class = None
-    permission_classes = (AllowAny,)
