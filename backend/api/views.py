@@ -36,10 +36,8 @@ class UsersViewSet(UserViewSet):
     search_fields = ('username', 'email')
 
     def get_permissions(self):
-        if self.action == 'retrieve':
+        if self.action in ['retrieve', 'me']:
             self.permission_classes = [IsAuthenticated]
-        if self.action == 'me':
-            self.permission_classes = [IsAuthor]
         return super().get_permissions()
 
 
