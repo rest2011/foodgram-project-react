@@ -7,12 +7,11 @@ from djoser.views import UserViewSet
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-
 from .filters import IngredientFilter, RecipeFilter
-from .permissions import IsAuthor
+from .permissions import IsAuthorOrReadOnly, IsAdminOrReadOnly
 from .serializers import (FollowSerializer, IngredientSerializer,
                           UserSerialiser, RecipeCreateSerializer,
                           RecipeForFollowersSerializer, RecipeSerializer,
@@ -34,6 +33,7 @@ class UsersViewSet(UserViewSet):
     serializer_class = UserSerialiser
     filter_backends = (DjangoFilterBackend, filters.SearchFilter,)
     search_fields = ('username', 'email')
+    permission_classes = [IsAuthorOrReadOnly | IsAdminOrReadOnly]
 
     def get_permissions(self):
         if self.action in ['retrieve', 'me']:
@@ -109,13 +109,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
     """
     filter_backends = (DjangoFilterBackend,)
     filterset_class = RecipeFilter
-
-    def get_permissions(self):
-        if self.action in ['create']:
-            self.permission_classes = [IsAuthenticated]
-        if self.action in ['partial_update', 'destroy']:
-            self.permission_classes = [IsAuthor | IsAdminUser]
-        return super().get_permissions()
+    permission_classes = [IsAuthorOrReadOnly | IsAdminOrReadOnly]
 
     def get_serializer_class(self):
         if self.action in ['retrieve', 'list']:
@@ -124,23 +118,22 @@ class RecipeViewSet(viewsets.ModelViewSet):
             return RecipeCreateSerializer
 
     def get_queryset(self):
+        queryset = Recipe.objects.all().prefetch_related(
+                'ingredients'
+        ).select_related('author')
         if self.request.user.is_authenticated:
             user_id = self.request.user.id
-            return Recipe.objects.annotate(
-                is_favorited=Exists(
-                    Favorite.objects.filter(
-                        user_id=user_id, recipe=OuterRef('pk')
-                    )
-                ),
-                is_in_shopping_cart=Exists(
-                    ShoppingCart.objects.filter(
-                        user_id=user_id, recipe=OuterRef('pk')
-                    )
-                )
-            ).prefetch_related('ingredients').select_related('author')
-        return Recipe.objects.all().prefetch_related(
-            'ingredients'
-        ).select_related('author')
+            favorite_subquery = Favorite.objects.filter(
+                user_id=user_id, recipe=OuterRef('pk')
+            )
+            shopping_cart_subquery = ShoppingCart.objects.filter(
+                user_id=user_id, recipe=OuterRef('pk')
+            )
+            return queryset.annotate(
+                is_favorited=Exists(favorite_subquery),
+                is_in_shopping_cart=Exists(shopping_cart_subquery)
+            )
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
@@ -158,11 +151,12 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
     def delete_recipe(self, model, request, pk):
         recipe = get_object_or_404(Recipe, id=pk)
-        if model.objects.filter(user=request.user, recipe=recipe).exists():
-            model.objects.filter(user=request.user, recipe=recipe).delete()
+        queryset = model.objects.filter(user=request.user, recipe=recipe)
+        if queryset.exists():
+            queryset.delete()
             return Response(status=HTTPStatus.NO_CONTENT)
         return Response({'errors': 'Такой рецепт не добавлялся'},
-                        status=HTTPStatus.BAD_REQUEST)
+                        status=HTTPStatus.NOT_FOUND)
 
     @action(
         detail=True, methods=['DELETE', 'POST'],
