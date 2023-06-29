@@ -73,16 +73,14 @@ class FollowUnfollow(generics.RetrieveDestroyAPIView,
 
     def delete(self, request, *args, **kwargs):
         instance = self.get_object()
-        subscription = Follow.objects.filter(
+        subscription, _ = Follow.objects.filter(
             user=request.user, author=instance
-        )
+        ).delete()
         if subscription:
-            subscription.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
-        else:
-            return Response(
-                {'errors': NOT_SUBSCRIBED}, status=status.HTTP_400_BAD_REQUEST,
-            )
+        return Response(
+            {'errors': NOT_SUBSCRIBED}, status=status.HTTP_400_BAD_REQUEST
+        )
 
 
 class SubscriptionsList(generics.ListAPIView):
@@ -151,9 +149,10 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
     def delete_recipe(self, model, request, pk):
         recipe = get_object_or_404(Recipe, id=pk)
-        queryset = model.objects.filter(user=request.user, recipe=recipe)
-        if queryset.exists():
-            queryset.delete()
+        recipes, _ = model.objects.filter(
+            user=request.user, recipe=recipe
+        ).delete()
+        if recipes:
             return Response(status=HTTPStatus.NO_CONTENT)
         return Response({'errors': 'Такой рецепт не добавлялся'},
                         status=HTTPStatus.NOT_FOUND)
@@ -209,18 +208,12 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
 
 class TagViewSet(viewsets.ModelViewSet):
-    """
-    Вьюсет для тэгов.
-    """
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
     pagination_class = None
 
 
 class IngredientViewSet(viewsets.ModelViewSet):
-    """
-    Вьюсет для ингредиентов.
-    """
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
     filter_backends = (DjangoFilterBackend, filters.SearchFilter,)
